@@ -499,8 +499,16 @@ ctrl_send_command(const char *cmd, const char *arg)
 
 	/* read result from master */
 	fp = fdopen(s, "r");
+	if (fp == NULL)
+	{
+		/* fdopen failed, close socket and bail out */
+		shutdown(s, SHUT_RDWR);
+		close(s);
+		goto bail_out;
+	}
+
 	index = 0;
-	while ((c = fgetc(fp)) != EOF && index < CTRL_RESULT_SIZE - 1 && c != '\n')
+	while (index < CTRL_RESULT_SIZE - 1 && (c = fgetc(fp)) != EOF && c != '\n')
 	{
 		result[index] = c;
 		index++;
@@ -513,16 +521,14 @@ ctrl_send_command(const char *cmd, const char *arg)
 			ret = -1;
 	}
 
-	if (fp != NULL)
-	{
-		fclose(fp);	/* This closes the underlying socket as well */
-	}
+	fclose(fp);	/* This closes the underlying socket as well */
+	fp = NULL;
 
       bail_out:
 	xfree(escaped);
 	if (fp == NULL)
 	{
-		/* Socket not converted to FILE*, close it directly */
+		/* Socket not yet converted to FILE*, close it directly */
 		shutdown(s, SHUT_RDWR);
 		close(s);
 	}
