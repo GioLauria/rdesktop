@@ -193,7 +193,8 @@ _ctrl_verify_unix_socket()
 	}
 
 	saun.sun_family = AF_UNIX;
-	strcpy(saun.sun_path, ctrlsock_name);
+	strncpy(saun.sun_path, ctrlsock_name, sizeof(saun.sun_path) - 1);
+	saun.sun_path[sizeof(saun.sun_path) - 1] = '\0';
 	len = sizeof(saun.sun_family) + strlen(saun.sun_path);
 
 	/* test connection */
@@ -457,6 +458,7 @@ ctrl_send_command(const char *cmd, const char *arg)
 	char result[CTRL_RESULT_SIZE], c, *escaped;
 
 	escaped = NULL;
+	fp = NULL;
 
 	if (!_ctrl_is_slave)
 		return -1;
@@ -469,7 +471,8 @@ ctrl_send_command(const char *cmd, const char *arg)
 
 	memset(&saun, 0, sizeof(struct sockaddr_un));
 	saun.sun_family = AF_UNIX;
-	strcpy(saun.sun_path, ctrlsock_name);
+	strncpy(saun.sun_path, ctrlsock_name, sizeof(saun.sun_path) - 1);
+	saun.sun_path[sizeof(saun.sun_path) - 1] = '\0';
 	len = sizeof(saun.sun_family) + strlen(saun.sun_path);
 
 	if (connect(s, (struct sockaddr *) &saun, len) < 0)
@@ -497,12 +500,12 @@ ctrl_send_command(const char *cmd, const char *arg)
 	/* read result from master */
 	fp = fdopen(s, "r");
 	index = 0;
-	while ((c = fgetc(fp)) != EOF && index < CTRL_RESULT_SIZE && c != '\n')
+	while ((c = fgetc(fp)) != EOF && index < CTRL_RESULT_SIZE - 1 && c != '\n')
 	{
 		result[index] = c;
 		index++;
 	}
-	result[index - 1] = '\0';
+	result[index] = '\0';
 
 	if (strncmp(result, "ERROR ", 6) == 0)
 	{
@@ -510,10 +513,19 @@ ctrl_send_command(const char *cmd, const char *arg)
 			ret = -1;
 	}
 
+	if (fp != NULL)
+	{
+		fclose(fp);	/* This closes the underlying socket as well */
+	}
+
       bail_out:
 	xfree(escaped);
-	shutdown(s, SHUT_RDWR);
-	close(s);
+	if (fp == NULL)
+	{
+		/* Socket not converted to FILE*, close it directly */
+		shutdown(s, SHUT_RDWR);
+		close(s);
+	}
 
 	return ret;
 }
